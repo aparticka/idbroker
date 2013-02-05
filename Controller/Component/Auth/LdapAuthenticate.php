@@ -1,5 +1,5 @@
 <?php
-App::uses('CakeLog', 'Log');
+//App::uses('CakeLog', 'Log');
 App::uses('BaseAuthenticate', 'Controller/Component/Auth');
 
 class LdapAuthenticate extends BaseAuthenticate {
@@ -18,7 +18,7 @@ class LdapAuthenticate extends BaseAuthenticate {
 
 	function __construct(ComponentCollection $collection, $settings = array()) {
 		$controller = $collection->getController();
-		$this->form = $controller->name;
+		$this->form = Inflector::singularize($controller->name);
 
 		$model = Configure::read('LDAP.LdapAuth.Model');
 		$model = (isset($settings['userModel'])) ? $settings['userModel'] : $model;
@@ -52,7 +52,7 @@ class LdapAuthenticate extends BaseAuthenticate {
 	}
 
 	public function authenticate(CakeRequest $request, CakeResponse $response) {
-		CakeLog::write('debug',"Trying to login with:".print_r($request,true));
+		//CakeLog::write('debug',"Trying to login with:".print_r($request,true));
 
                 $userModel = $this->settings['userModel'];
                 list($plugin, $model) = pluginSplit($userModel);
@@ -104,25 +104,28 @@ class LdapAuthenticate extends BaseAuthenticate {
                         $user[$this->model->alias]['bindDN'] = $dn;
                         $user[$this->model->alias]['bindPasswd'] = $password;
 
-			$groups = $this->getGroups($user[$this->model->alias]);
+			//$groups = $this->getGroups($user[$this->model->alias]);
 
 			//This may be removed in the future.  It's an idea I have about creating a SQL user whenever a user exists in LDAP
 			if(isset($this->sqlUserModel) && !empty($this->sqlUserModel)){
 				$userRecord = $this->existsOrCreateSQLUser($user);
 				if($userRecord){
-					CakeSession::write('Auth.LdapGroups',$groups);
+					//CakeSession::write('Auth.LdapGroups',$groups);
 					//Check if we are mirroring sql for groups
-					if(isset($this->sqlGroupModel) && !empty($this->sqlGroupModel)){
+					/*if(isset($this->sqlGroupModel) && !empty($this->sqlGroupModel)){
 						if($sqlGroup = $this->existsOrCreateSQLGroup($userRecord,$groups)){
 							CakeSession::write('Auth.'.$this->sqlGroupModel->alias,$groups);
 						}else{
-							CakeLog::write('ldap.error',"Failed to update sql mirrored groups:".print_r($sqlGroup,1));
+							//CakeLog::write('ldap.error',"Failed to update sql mirrored groups:".print_r($sqlGroup,1));
 						}
-					}
+					}*/
 					//Stuff the SQL user in there also
 					$user[$this->model->alias] =  array_merge($user[$this->model->alias], $userRecord);
+					return $userRecord;
 				}else{
-					CakeLog::write('ldap.error',"Error creating or finding the SQL version of the user: ".print_r($user,1));
+					CakeSession::write('Auth.LdapExists', true);
+					return false;
+					//CakeLog::write('ldap.error',"Error creating or finding the SQL version of the user: ".print_r($user,1));
 				}
 			}
 			return $user[$this->model->alias];
@@ -173,22 +176,22 @@ class LdapAuthenticate extends BaseAuthenticate {
 					$udata[$this->sqlGroupModel->alias][] = $this->sqlGroupModel->id;
 					
 				if($ngroup = $this->sqlGroupModel->saveAll($data)){
-					CakeLog::write('debug',"Added new group {$groupName} with user {$user['username']}");
+					//CakeLog::write('debug',"Added new group {$groupName} with user {$user['username']}");
 				}else{
-					CakeLog::write('ldap.error', "Failed to add new group {$groupName}/{$dn} with user:". print_r($user,1).	
-						':Input:'.print_r($data,1).':Result:'.print_r($ngroup,1));
+					//CakeLog::write('ldap.error', "Failed to add new group {$groupName}/{$dn} with user:". print_r($user,1).	
+						//':Input:'.print_r($data,1).':Result:'.print_r($ngroup,1));
 				}
 	
 			}
 		}
 		if(isset($udata) && $gupdate = $this->sqlUserModel->save($udata)){
-			CakeLog::write('ldap.debug',"Updating group {$sqlGroup[$this->sqlGroupModel->alias]['name']} to add:".print_r($user,1).
-				':With Data:'.print_r($udata,1).':Result:'.print_r($gupdate,1));
+			//CakeLog::write('ldap.debug',"Updating group {$sqlGroup[$this->sqlGroupModel->alias]['name']} to add:".print_r($user,1).
+				//':With Data:'.print_r($udata,1).':Result:'.print_r($gupdate,1));
 		}else{
-			CakeLog::write('ldap.error',"Failed to Mirror group {$sqlGroup[$this->sqlGroupModel->alias]['name']} for user:".
-				print_r($user,1));
+			//CakeLog::write('ldap.error',"Failed to Mirror group {$sqlGroup[$this->sqlGroupModel->alias]['name']} for user:".
+				//print_r($user,1));
 		}
-		CakeLog::write('debug',"SQL group result:".print_r($sqlGroups,1).':'.print_r($user,1).':'.print_r($groups,1));
+		//CakeLog::write('debug',"SQL group result:".print_r($sqlGroups,1).':'.print_r($user,1).':'.print_r($groups,1));
 		return (!empty($sqlGroups)) ? $sqlGroups : false;
 	}
 
@@ -203,20 +206,28 @@ class LdapAuthenticate extends BaseAuthenticate {
 		$result = $this->sqlUserModel->find('first',array('recursive'=>-1,'conditions'=>array('username'=>$username)));
 		//If so, lets just return that record and continue working
 		if(isset($result) && !empty($result)){
+			$this->sqlUserModel->id = $result[$this->sqlUserModel->alias]['id'];
+			$user = $user[$this->model->alias];
+			if(isset($user['displayname']) && !empty($user['displayname'])) $u['name'] = $user['displayname'];
+			if(isset($user['mail']) && !empty($user['mail']) ) $u['email'] = strtolower($user['mail']);
+			$this->sqlUserModel->save($u);
 			//Check if we are mirroring groups as well, then refresh them
+			$result = $this->sqlUserModel->read();
 			return $result[$this->sqlUserModel->alias];
 		}
 		else{
+			return false;
+			$user = $user[$this->model->alias];
 			$this->sqlUserModel->create(); //User doesn't exists, grab it from the auth session and add it to the user table
-			if(isset($user['displayname']) && !empty($user['displayname'])) $u['displayname'] = $user['displayname'];
+			if(isset($user['displayname']) && !empty($user['displayname'])) $u['name'] = $user['displayname'];
 			if(isset($user['dn']) && !empty($user['dn']) ) $u['dn'] = $user['dn'];
 			if(isset($username) && !empty($username) ) $u['username'] = $username;
-			if(isset($user['mail']) && !empty($user['mail']) ) $u['email'] = $user['mail'];
+			if(isset($user['mail']) && !empty($user['mail']) ) $u['email'] = strtolower($user['mail']);
 			//so that it will get a id number for the foreign keys
 			if($this->sqlUserModel->save($u)){
 				$result = $this->sqlUserModel->find('first', array('recursive'=>-1,'conditions'=>array('username'=>$username)));
 				if($result){
-					return $result[$this->sqlModel->alias];
+					return $result[$this->sqlUserModel->alias];
 				}else return false;
 			}else{
 				return false;
@@ -227,7 +238,7 @@ class LdapAuthenticate extends BaseAuthenticate {
 	function getGroups($user = null){
 
 		if(strtolower($this->groupType) == 'group'){
-			CakeLog::write('ldap.debug',"Looking for {$user['dn']} & 'objectclass'=>'group'");
+			//CakeLog::write('ldap.debug',"Looking for {$user['dn']} & 'objectclass'=>'group'");
                         $groups = $this->model->find('all',array('conditions'=>array('AND'=>array('objectclass'=>'group', 'member'=>$user['dn'])),'scope'=>'sub'));
 		}elseif(strtolower($this->groupType) == 'groupofuniquenames'){
                         $groups = $this->model->find('all',array('conditions'=>array('AND'=>

@@ -136,7 +136,7 @@ class LdapAuthenticate extends BaseAuthenticate {
 
         function _getDn( $attr, $query){
                 $userObj = $this->model->find('first', array('conditions'=>"$attr=$query", 'scope'=>'sub'));
-                return($userObj[$this->model->alias]['dn']);
+                return isset($userObj[$this->model->alias]['dn']) ? $userObj[$this->model->alias]['dn'] : '';
         }
 
 	function existsOrCreateSQLGroup($user = null, $groups = null){

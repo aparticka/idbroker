@@ -203,7 +203,8 @@ class LdapAuthenticate extends BaseAuthenticate {
 		if(is_array($username) && isset($username[0]) && !is_array($username[0]) ) $username = $username[0];
 
 		//Lets See if that username is already in our system
-		$result = $this->sqlUserModel->find('first',array('recursive'=>-1,'conditions'=>array('username'=>$username)));
+		$conditions = array_merge($this->settings['scope'], array('username' => $username));
+		$result = $this->sqlUserModel->find('first',array('recursive'=>-1,'conditions' => $conditions));
 		//If so, lets just return that record and continue working
 		if(isset($result) && !empty($result)){
 			$this->sqlUserModel->id = $result[$this->sqlUserModel->alias]['id'];

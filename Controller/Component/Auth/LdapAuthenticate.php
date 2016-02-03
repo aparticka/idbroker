@@ -70,7 +70,8 @@ class LdapAuthenticate extends BaseAuthenticate {
 		$dn = $this->_getDn($this->model->primaryKey, $request->data[$this->form][$fields['username']]);
                 return $this->_findLdapUser(
 			$dn,
-                        $request->data[$this->form][$fields['password']]
+                        $request->data[$this->form][$fields['password']],
+					$request->data[$this->form]['company_id']
                 );
 
 
@@ -97,7 +98,7 @@ class LdapAuthenticate extends BaseAuthenticate {
         }
 
 
-        function _findLdapUser($dn, $password){
+        function _findLdapUser($dn, $password, $company){
                 $authResult =  $this->model->auth( array('dn'=>$dn, 'password'=>$password));
 		if($authResult == 1){
 			$user =  $this->model->find('first', array('scope'=>'base', 'targetDn'=>$dn));
@@ -108,7 +109,7 @@ class LdapAuthenticate extends BaseAuthenticate {
 
 			//This may be removed in the future.  It's an idea I have about creating a SQL user whenever a user exists in LDAP
 			if(isset($this->sqlUserModel) && !empty($this->sqlUserModel)){
-				$userRecord = $this->existsOrCreateSQLUser($user);
+				$userRecord = $this->existsOrCreateSQLUser($user, $company);
 				if($userRecord){
 					//CakeSession::write('Auth.LdapGroups',$groups);
 					//Check if we are mirroring sql for groups
@@ -196,14 +197,14 @@ class LdapAuthenticate extends BaseAuthenticate {
 	}
 
 
-	function existsOrCreateSQLUser($user){
+	function existsOrCreateSQLUser($user, $company){
 		//Find out what the LDAP primary key is for the user model, this will be used to know which attribute to lookup the username in
 		$userPK = $this->model->primaryKey;
 		if(isset($user[$this->model->alias][$userPK]) ) $username = $user[$this->model->alias][$userPK];
 		if(is_array($username) && isset($username[0]) && !is_array($username[0]) ) $username = $username[0];
 
 		//Lets See if that username is already in our system
-		$conditions = array_merge($this->settings['scope'], array('username' => $username));
+		$conditions = array_merge($this->settings['scope'], array('username' => $username, 'company_id' => $company));
 		$result = $this->sqlUserModel->find('first',array('recursive'=>-1,'conditions' => $conditions));
 		//If so, lets just return that record and continue working
 		if(isset($result) && !empty($result)){
